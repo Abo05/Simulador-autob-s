@@ -1,0 +1,10 @@
+# Directorio de compilación de Cabal
+dist-newstyle/
+
+# Archivos de etiquetas para navegación de código (generados por fast-tags, ctags, etc.)
+tags
+tags.lock
+tags.temp
+
+# Archivos de configuración locales o temporales de la suite de desarrollo
+.ghc.environment.*
