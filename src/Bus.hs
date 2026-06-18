@@ -1,7 +1,8 @@
-module Bus (nextBus, Bus(..), TimeToNextBus) where
+module Bus (nextBus, Bus(..)) where
 
-timeBetweenBus :: Int
-timeBetweenBus = 7
+import System.Random (randomRIO)
+import Events (Time)
+
 busCapacity :: Int
 busCapacity = 30
 
@@ -9,11 +10,11 @@ data Bus = Bus
     { capacity :: Int,
       passengers :: Int
     } deriving (Show)
-type TimeToNextBus = Int
 
-nextBus :: Float -> TimeToNextBus -> (TimeToNextBus, Maybe Bus)
-nextBus rand tm | tm <= 0 = 
-                    let nextTime = timeBetweenBus + round (5 * rand)
-                        newPassengers = round (fromIntegral busCapacity * abs rand)
-                    in (nextTime, Just (Bus busCapacity newPassengers))
-                | otherwise = (tm-1, Nothing)
+nextBus :: Float ->  IO (Time, Bus)
+nextBus lambda = do 
+                    randTime <- randomRIO(0.000001, 1.0)
+                    randPass <- randomRIO(0.0, 1.0) :: IO Float
+                    let time = -(log randTime) / lambda
+                    let pass = round (fromIntegral busCapacity * randPass)
+                    return (time, Bus busCapacity pass)

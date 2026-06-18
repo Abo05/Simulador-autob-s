@@ -1,33 +1,59 @@
 module Main (main) where
 
 import Control.Concurrent (threadDelay)
-import System.Random (randomRIO)
-import Passengers (updatePassengers, busInStop, WaitingPassengers)
-import Bus (nextBus, TimeToNextBus)
+import Passengers (getPassengers, busInStop, WaitingPassengers)
+import Bus (nextBus, Bus(..))
+import Events (EventType(..), Event, pushEvent)
 
-lambda :: Float
-lambda = 1.5
+lambdaGroupSize :: Float
+lambdaGroupSize = 1.5   -- Media de personas por grupo (Poisson)
+
+lambdaGroupArrival :: Float
+lambdaGroupArrival = 1/2   -- Tasa de llegada de grupos (Exponencial)
+
+lambdaBusArrival :: Float
+lambdaBusArrival = 1/5.5  -- Tasa de llegada de autobuses (Exponencial)
 
 main :: IO ()
-main = loop 0 0
+main = do
+    (tFirstGroup, numPassengers) <- getPassengers lambdaGroupSize lambdaGroupArrival
+    (tFirstBus, firstBusObj) <- nextBus lambdaBusArrival
+    
+    let initialQueue = pushEvent (tFirstGroup, GroupArrival numPassengers) []
+    let finalQueue = pushEvent (tFirstBus, BusArrival 0) initialQueue
+    
+    -- Estado inicial: Reloj = 0.0, Pasajeros = 0, Bus Pendiente = firstBusObj, Cola de eventos
+    loop 0 (Just firstBusObj) finalQueue
 
-loop :: WaitingPassengers -> TimeToNextBus -> IO ()
-loop passengers time = do
-    randomBus <- randomRIO (-1.0, 1.0) :: IO Float
+loop :: WaitingPassengers -> Maybe Bus -> [Event] -> IO ()
+loop _ _ [] = return ()
+loop waiting pendingBus ((eventTime, eventType) : restQueue) = do
     
-    newPassengers <- updatePassengers passengers lambda
-    let (newTime, maybeBus) = nextBus randomBus time
-    
-    nextIterationPassengers <- case maybeBus of
-        Nothing -> do
-            putStrLn $ "Esperando... (Tiempo restante: " ++ show newTime ++ ") | Pasajeros en parada: " ++ show newPassengers
-            return newPassengers
+    case eventType of
+        GroupArrival amount -> do
+            let totalWaiting = waiting + amount
+            putStrLn $ "[" ++ show eventTime ++ "] LLEGA GRUPO. Tamaño: " ++ show amount ++ ". Esperando en parada: " ++ show totalWaiting
             
-        Just bus -> do
-            let leftBehind = busInStop bus newPassengers
-            let boarded = newPassengers - leftBehind
-            putStrLn $ "¡LLEGA EL BUS! Han subido " ++ show boarded ++ " pasajeros. Se quedan " ++ show leftBehind ++ " esperando."
-            return leftBehind
-    
-    threadDelay 500000
-    loop nextIterationPassengers newTime
+            (dt, nextAmount) <- getPassengers lambdaGroupSize lambdaGroupArrival
+            let nextEvent = (eventTime + dt, GroupArrival nextAmount)
+            let newQueue = pushEvent nextEvent restQueue
+            
+            threadDelay 250000 
+            loop totalWaiting pendingBus newQueue
+            
+        BusArrival _ -> do
+            let arrivingBus = case pendingBus of
+                                Just b  -> b
+                                Nothing -> Bus 30 0 -- Fallback de seguridad
+            
+            let leftBehind = busInStop arrivingBus waiting
+            let boarded = waiting - leftBehind
+            
+            putStrLn $ "[" ++ show eventTime ++ "] LLEGA BUS. Han subido: " ++ show boarded ++ " pasajeros. Se quedan: " ++ show leftBehind
+            
+            (dtNextBus, nextBusObj) <- nextBus lambdaBusArrival
+            let nextEvent = (eventTime + dtNextBus, BusArrival 0)
+            let newQueue = pushEvent nextEvent restQueue
+            
+            threadDelay 500000 
+            loop leftBehind (Just nextBusObj) newQueue

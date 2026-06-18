@@ -1,14 +1,17 @@
-module Passengers (updatePassengers, busInStop, WaitingPassengers) where
+module Passengers (getPassengers, busInStop, WaitingPassengers) where
 
 import Bus (Bus(capacity, passengers))
 import System.Random (randomRIO)
+import Events (Time)
 
 type WaitingPassengers = Int
 
-updatePassengers :: WaitingPassengers -> Float -> IO WaitingPassengers
-updatePassengers p lambda = do
-                        new <- poisson lambda
-                        return (p + new)
+getPassengers :: Float -> Float -> IO (Time, WaitingPassengers)
+getPassengers lambdaPoisson lambdaExp = do
+                        newPassengers <- poisson lambdaPoisson
+                        rand <- randomRIO(0.000001, 1.0)
+                        let time = (-log rand) / lambdaExp
+                        return  (time, newPassengers)
 
 poisson :: Float -> IO Int
 poisson lambda = go 1 0
