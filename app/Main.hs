@@ -2,18 +2,21 @@ module Main (main) where
 
 import Control.Concurrent (threadDelay)
 import System.Random (randomRIO)
-import Passengers (nextPerson, busInStop, WaitingPassengers)
+import Passengers (updatePassengers, busInStop, WaitingPassengers)
 import Bus (nextBus, TimeToNextBus)
+
+lambda :: Float
+lambda = 1.5
 
 main :: IO ()
 main = loop 0 0
 
 loop :: WaitingPassengers -> TimeToNextBus -> IO ()
 loop passengers time = do
-    random <- randomRIO (-1.0, 1.0) :: IO Float
+    randomBus <- randomRIO (-1.0, 1.0) :: IO Float
     
-    let newPassengers = nextPerson passengers random
-    let (newTime, maybeBus) = nextBus random time
+    newPassengers <- updatePassengers passengers lambda
+    let (newTime, maybeBus) = nextBus randomBus time
     
     nextIterationPassengers <- case maybeBus of
         Nothing -> do
