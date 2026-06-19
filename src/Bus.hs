@@ -3,16 +3,13 @@ module Bus (nextBus, Bus(..)) where
 import System.Random (randomRIO)
 import Events (Time)
 
-busCapacity :: Int
-busCapacity = 30
-
 data Bus = Bus 
     { capacity :: Int,
       passengers :: Int
     } deriving (Show)
 
-nextBus :: Float ->  IO (Time, Bus)
-nextBus baseTime = do 
+nextBus :: Float ->  Int ->  IO (Time, Bus)
+nextBus baseTime busCapacity = do 
                     let maxNoise = baseTime * 0.4
                     noise <- randomRIO (-maxNoise, maxNoise)
 
