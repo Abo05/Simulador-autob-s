@@ -12,9 +12,18 @@ data Bus = Bus
     } deriving (Show)
 
 nextBus :: Float ->  IO (Time, Bus)
-nextBus lambda = do 
-                    randTime <- randomRIO(0.000001, 1.0)
-                    randPass <- randomRIO(0.0, 1.0) :: IO Float
-                    let time = -(log randTime) / lambda
+nextBus baseTime = do 
+                    let maxNoise = baseTime * 0.4
+                    noise <- randomRIO (-maxNoise, maxNoise)
+
+                    delayChance <- randomRIO (0.0, 1.0) :: IO Float
+                    let delay =if delayChance < 0.1
+                            then baseTime * 0.6
+                            else 0.0
+
+                    let time = baseTime + noise + delay
+
+                    randPass <- randomRIO (0.0, 1.0) :: IO Float
                     let pass = round (fromIntegral busCapacity * randPass)
+
                     return (time, Bus busCapacity pass)

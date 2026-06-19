@@ -11,13 +11,13 @@ lambdaGroupSize = 1.5   -- Media de personas por grupo (Poisson)
 lambdaGroupArrival :: Float
 lambdaGroupArrival = 1/2   -- Tasa de llegada de grupos (Exponencial)
 
-lambdaBusArrival :: Float
-lambdaBusArrival = 1/5.5  -- Tasa de llegada de autobuses (Exponencial)
+timeBeetwenBus :: Float
+timeBeetwenBus = 5.5  -- Tasa de llegada de autobuses (Uniforme)
 
 main :: IO ()
 main = do
     (tFirstGroup, numPassengers) <- getPassengers lambdaGroupSize lambdaGroupArrival
-    (tFirstBus, firstBusObj) <- nextBus lambdaBusArrival
+    (tFirstBus, firstBusObj) <- nextBus timeBeetwenBus
     
     let initialQueue = pushEvent (tFirstGroup, GroupArrival numPassengers) []
     let finalQueue = pushEvent (tFirstBus, BusArrival 0) initialQueue
@@ -51,7 +51,7 @@ loop waiting pendingBus ((eventTime, eventType) : restQueue) = do
             
             putStrLn $ "[" ++ show eventTime ++ "] LLEGA BUS. Han subido: " ++ show boarded ++ " pasajeros. Se quedan: " ++ show leftBehind
             
-            (dtNextBus, nextBusObj) <- nextBus lambdaBusArrival
+            (dtNextBus, nextBusObj) <- nextBus timeBeetwenBus
             let nextEvent = (eventTime + dtNextBus, BusArrival 0)
             let newQueue = pushEvent nextEvent restQueue
             
