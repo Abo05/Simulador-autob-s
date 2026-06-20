@@ -6,11 +6,12 @@ data Config = Config
     { lambdaSize    :: Maybe Float,
       lambdaTime    :: Maybe Float,
       busFrequency  :: Maybe Float,
-      busCapacity   :: Maybe Int
+      busCapacity   :: Maybe Int,
+      betaAlpha     :: Maybe Float
     } deriving (Show)
 
 emptyConfig :: Config
-emptyConfig = Config Nothing Nothing Nothing Nothing
+emptyConfig = Config Nothing Nothing Nothing Nothing Nothing
 
 parse :: [String] -> Config
 parse []   = emptyConfig
@@ -22,6 +23,7 @@ parse args = parseArgs args emptyConfig
         parseArgs ("-t": val : xs) config = parseArgs xs (config { lambdaTime = Just (read val) })
         parseArgs ("-f": val : xs) config = parseArgs xs (config { busFrequency = Just (read val) })
         parseArgs ("-c": val : xs) config = parseArgs xs (config { busCapacity = Just (read val) })
+        parseArgs ("-a": val : xs) config = parseArgs xs (config { betaAlpha = Just (read val) })
         parseArgs (_ : xs) config         = parseArgs xs config
 
 lambdaGroupSize :: Float
@@ -36,11 +38,15 @@ timeBeetwenBus = 5.5  -- Tasa de llegada de autobuses (Uniforme)
 preBusCapacity :: Int
 preBusCapacity = 30
 
+separation :: Float
+separation = 4
+
 data AppConfig = AppConfig
-    { size     :: Float
-    , time     :: Float
-    , freq     :: Float
-    , cap      :: Int
+    { size :: Float
+    , time :: Float
+    , freq :: Float
+    , cap  :: Int
+    , sep  :: Float
     } deriving (Show)
 
 applyDefaults :: Config -> AppConfig
@@ -49,6 +55,7 @@ applyDefaults cfg = AppConfig
     , time     = fromMaybe lambdaGroupArrival (lambdaTime cfg)
     , freq     = fromMaybe timeBeetwenBus     (busFrequency cfg)
     , cap      = fromMaybe preBusCapacity     (busCapacity cfg)
+    , sep      = fromMaybe separation         (betaAlpha cfg)
     }
 
 getAppConfig :: [String] -> AppConfig

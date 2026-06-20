@@ -3,15 +3,22 @@ module Motor(runSimulation) where
 import Control.Concurrent (threadDelay)
 import Passengers (getPassengers, busInStop, WaitingPassengers)
 import Bus (nextBus, Bus(..))
-import Events (EventType(..), Event, pushEvent)
+import Events (EventType(..), Event, pushEvent, Time)
 import Parser (AppConfig(..))
+
+pushPassengers :: Time -> ([Time], [WaitingPassengers]) -> [Event] -> [Event]
+pushPassengers _ ([], _) e = e
+pushPassengers _ (_, []) e = e
+pushPassengers tm (t : ts, w : ws) e = let event = (tm + t, GroupArrival w)
+                                        in pushPassengers tm (ts, ws) (pushEvent event e)
+
 
 runSimulation :: AppConfig -> IO ()
 runSimulation conf = do
-    (tFirstGroup, numPassengers) <- getPassengers (size conf) (time conf)
     (tFirstBus, firstBusObj) <- nextBus (freq conf) (cap conf)
+    firstGroups <- getPassengers (size conf) (time conf) (sep conf) tFirstBus
     
-    let initialQueue = pushEvent (tFirstGroup, GroupArrival numPassengers) []
+    let initialQueue = pushPassengers 0 firstGroups []
     let finalQueue = pushEvent (tFirstBus, BusArrival 0) initialQueue
     
     loop conf 0 (Just firstBusObj) finalQueue
@@ -25,14 +32,9 @@ loop conf waiting pendingBus ((eventTime, eventType) : restQueue) = do
             let totalWaiting = waiting + amount
             putStrLn $ "[" ++ show eventTime ++ "] LLEGA GRUPO. Tamaño: " ++ show amount ++ ". Esperando en parada: " ++ show totalWaiting
             
-            let sz = size conf
-            let tm = time conf
-            (dt, nextAmount) <- getPassengers sz tm
-            let nextEvent = (eventTime + dt, GroupArrival nextAmount)
-            let newQueue = pushEvent nextEvent restQueue
             
             threadDelay 250000 
-            loop conf totalWaiting pendingBus newQueue
+            loop conf totalWaiting pendingBus restQueue
             
         BusArrival _ -> do
             let arrivingBus = case pendingBus of
@@ -48,7 +50,12 @@ loop conf waiting pendingBus ((eventTime, eventType) : restQueue) = do
             let cp = cap conf
             (dtNextBus, nextBusObj) <- nextBus fr cp
             let nextEvent = (eventTime + dtNextBus, BusArrival 0)
-            let newQueue = pushEvent nextEvent restQueue
+            let queue = pushEvent nextEvent restQueue
             
+            let sz = size conf
+            let tm = time conf
+            let al = sep conf
+            groups <- getPassengers sz tm al dtNextBus
+            let newQueue = pushPassengers eventTime groups queue
             threadDelay 500000 
             loop conf leftBehind (Just nextBusObj) newQueue
