@@ -13,15 +13,15 @@ getPassengers lambdaSize lambdaArrival alpha time = do
     calculateGroups nGroups ([], [])
         where
             calculateGroups :: Int -> ([Time], [WaitingPassengers]) -> IO ([Time], [WaitingPassengers])
-            calculateGroups 0 g = return g
-            calculateGroups n (times, groupSizes) = do
-                beta <- beta1 alpha
-                let eventTime = beta * time
+            calculateGroups 0 acc = return acc
+            calculateGroups n (times, sizes) = do
                 groupSize <- poisson lambdaSize
-
-                calculateGroups (n-1) (eventTime : times, groupSize : groupSizes)
-
-
+                if groupSize == 0
+                    then calculateGroups (n - 1) (times, sizes) -- Nos saltamos este grupo, no añade nada
+                    else do
+                        beta <- beta1 alpha
+                        let eventTime = beta * time
+                        calculateGroups (n - 1) (eventTime : times, groupSize : sizes)
 
 poisson :: Float -> IO Int
 poisson lambda = go 1 0

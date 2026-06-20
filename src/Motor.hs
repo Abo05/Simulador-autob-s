@@ -9,10 +9,8 @@ import Parser (AppConfig(..))
 pushPassengers :: Time -> ([Time], [WaitingPassengers]) -> [Event] -> [Event]
 pushPassengers _ ([], _) e = e
 pushPassengers _ (_, []) e = e
-pushPassengers tm (t : ts, w : ws) e = if t <= 0
-                                       then pushPassengers tm (ts, ws) e
-                                       else let event = (tm + t, GroupArrival w)
-                                            in pushPassengers tm (ts, ws) (pushEvent event e)
+pushPassengers tm (t : ts, w : ws) e = let event = (tm + t, GroupArrival w)
+                                       in pushPassengers tm (ts, ws) (pushEvent event e)
 
 
 runSimulation :: AppConfig -> IO ()
