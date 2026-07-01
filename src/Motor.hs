@@ -1,10 +1,15 @@
 module Motor(runSimulation) where
 
 import Control.Concurrent (threadDelay)
-import Passengers (getPassengers, busInStop, WaitingPassengers)
+import Passengers (getPassengers, busInStop, WaitingPassengers, getPatience)
 import Bus (nextBus, Bus(..))
 import Events (EventType(..), Event, pushEvent, Time)
 import Parser (AppConfig(..))
+
+cGreen, cYellow, cRed:: String
+cGreen  = "\x1b[32m"
+cYellow = "\x1b[33m"
+cRed    = "\x1b[31m"
 
 pushPassengers :: Time -> ([Time], [WaitingPassengers]) -> [Event] -> [Event]
 pushPassengers _ ([], _) e = e
@@ -21,20 +26,31 @@ runSimulation conf = do
     let initialQueue = pushPassengers 0 firstGroups []
     let finalQueue = pushEvent (tFirstBus, BusArrival 0) initialQueue
     
-    loop conf 0 (Just firstBusObj) finalQueue
+    loop conf tFirstBus 0 (Just firstBusObj) finalQueue
 
-loop :: AppConfig -> WaitingPassengers -> Maybe Bus -> [Event] -> IO ()
-loop _ _ _ [] = return ()
-loop conf waiting pendingBus ((eventTime, eventType) : restQueue) = do
+loop :: AppConfig -> Time -> WaitingPassengers -> Maybe Bus -> [Event] -> IO ()
+loop _ _ _ _ [] = return ()
+loop conf tNextBus waiting pendingBus ((eventTime, eventType) : restQueue) = do
     
     case eventType of
         GroupArrival amount -> do
             let totalWaiting = waiting + amount
-            putStrLn $ "[" ++ show eventTime ++ "] LLEGA GRUPO. Tamaño: " ++ show amount ++ ". Esperando en parada: " ++ show totalWaiting
+            putStrLn $ cYellow ++ "[" ++ show eventTime ++ "] LLEGA GRUPO. Tamaño: " ++ show amount ++ ". Esperando en parada: " ++ show totalWaiting
             
+            let timeNextBus = max 0 (tNextBus - eventTime)
+            let l1 = patPass conf
+            let l2 = patTime conf
+            patience <- getPatience l1 l2 totalWaiting timeNextBus
+
+            let queue = case patience of
+                            Just waitingTime -> 
+                                let absoluteAbandonTime = eventTime + waitingTime
+                                    event = (absoluteAbandonTime, GroupAbandonment amount)
+                                in pushEvent event restQueue
+                            Nothing -> restQueue
             
             threadDelay 250000 
-            loop conf totalWaiting pendingBus restQueue
+            loop conf tNextBus totalWaiting pendingBus queue
             
         BusArrival _ -> do
             let arrivingBus = case pendingBus of
@@ -44,7 +60,7 @@ loop conf waiting pendingBus ((eventTime, eventType) : restQueue) = do
             let leftBehind = busInStop arrivingBus waiting
             let boarded = waiting - leftBehind
             
-            putStrLn $ "[" ++ show eventTime ++ "] LLEGA BUS. Han subido: " ++ show boarded ++ " pasajeros. Se quedan: " ++ show leftBehind
+            putStrLn $ cGreen ++ "[" ++ show eventTime ++ "] LLEGA BUS. Han subido: " ++ show boarded ++ " pasajeros. Se quedan: " ++ show leftBehind
             
             let fr = freq conf
             let cp = cap conf
@@ -57,5 +73,16 @@ loop conf waiting pendingBus ((eventTime, eventType) : restQueue) = do
             let al = sep conf
             groups <- getPassengers sz tm al dtNextBus
             let newQueue = pushPassengers eventTime groups queue
+            let absoluteNextBusTime = eventTime + dtNextBus
+
             threadDelay 500000 
-            loop conf leftBehind (Just nextBusObj) newQueue
+
+            loop conf absoluteNextBusTime leftBehind (Just nextBusObj) newQueue
+
+        GroupAbandonment amount -> do
+
+            let totalWaiting = max 0 (waiting - amount)
+            putStrLn $ cRed ++ "[" ++ show eventTime ++ "] SE VA GRUPO. Tamaño: " ++ show amount ++ ". Esperando en parada: " ++ show totalWaiting
+
+            threadDelay 250000 
+            loop conf tNextBus totalWaiting pendingBus restQueue

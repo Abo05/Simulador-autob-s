@@ -1,4 +1,4 @@
-module Passengers (getPassengers, busInStop, WaitingPassengers) where
+module Passengers (getPassengers, busInStop, WaitingPassengers, getPatience) where
 
 import Bus (Bus(capacity, passengers))
 import System.Random (randomRIO)
@@ -17,7 +17,7 @@ getPassengers lambdaSize lambdaArrival alpha time = do
             calculateGroups n (times, sizes) = do
                 groupSize <- poisson lambdaSize
                 if groupSize == 0
-                    then calculateGroups (n - 1) (times, sizes) -- Nos saltamos este grupo, no añade nada
+                    then calculateGroups (n - 1) (times, sizes)
                     else do
                         beta <- beta1 alpha
                         let eventTime = beta * time
@@ -43,3 +43,17 @@ beta1 alpha = do
 
 busInStop :: Bus -> WaitingPassengers -> WaitingPassengers
 busInStop bus =  max 0 . (+ (passengers bus - capacity bus))
+
+getPatience :: Float -> Float -> WaitingPassengers -> Time -> IO (Maybe Time)
+getPatience l1 l2 p t = do 
+    let lambda = l1 * fromIntegral p + l2 * t
+    
+    if lambda <= 0
+        then return Nothing
+        else do
+            rand <- randomRIO (1e-6, 1.0)
+            let waitingTime = -(log rand) / lambda
+            
+            if waitingTime >= t
+                then return Nothing
+                else return (Just waitingTime)

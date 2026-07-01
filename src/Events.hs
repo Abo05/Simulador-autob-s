@@ -1,6 +1,6 @@
 module Events (EventType(..), Time, Event, pushEvent) where
 
-data EventType = GroupArrival Int | BusArrival Int 
+data EventType = GroupArrival Int | BusArrival Int  | GroupAbandonment Int
     deriving (Show)
 
 type Time = Float

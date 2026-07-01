@@ -7,11 +7,13 @@ data Config = Config
       lambdaTime    :: Maybe Float,
       busFrequency  :: Maybe Float,
       busCapacity   :: Maybe Int,
-      betaAlpha     :: Maybe Float
+      betaAlpha     :: Maybe Float,
+      lambdaPacPass :: Maybe Float,
+      lambdaPacTime :: Maybe Float
     } deriving (Show)
 
 emptyConfig :: Config
-emptyConfig = Config Nothing Nothing Nothing Nothing Nothing
+emptyConfig = Config Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
 parse :: [String] -> Config
 parse []   = emptyConfig
@@ -24,6 +26,8 @@ parse args = parseArgs args emptyConfig
         parseArgs ("-f": val : xs) config = parseArgs xs (config { busFrequency = Just (read val) })
         parseArgs ("-c": val : xs) config = parseArgs xs (config { busCapacity = Just (read val) })
         parseArgs ("-a": val : xs) config = parseArgs xs (config { betaAlpha = Just (read val) })
+        parseArgs ("-pp": val : xs) config = parseArgs xs (config { lambdaPacPass = Just (read val) })
+        parseArgs ("-pt": val : xs) config = parseArgs xs (config { lambdaPacTime = Just (read val) })
         parseArgs (_ : xs) config         = parseArgs xs config
 
 lambdaGroupSize :: Float
@@ -41,12 +45,20 @@ preBusCapacity = 30
 separation :: Float
 separation = 4
 
+patiencePassengers :: Float
+patiencePassengers = 0.05
+
+patienceTime :: Float
+patienceTime = 0.02
+
 data AppConfig = AppConfig
-    { size :: Float
-    , time :: Float
-    , freq :: Float
-    , cap  :: Int
-    , sep  :: Float
+    { size    :: Float
+    , time    :: Float
+    , freq    :: Float
+    , cap     :: Int
+    , sep     :: Float
+    , patPass :: Float
+    , patTime :: Float
     } deriving (Show)
 
 applyDefaults :: Config -> AppConfig
@@ -56,6 +68,8 @@ applyDefaults cfg = AppConfig
     , freq     = fromMaybe timeBeetwenBus     (busFrequency cfg)
     , cap      = fromMaybe preBusCapacity     (busCapacity cfg)
     , sep      = fromMaybe separation         (betaAlpha cfg)
+    , patPass  = fromMaybe patiencePassengers (lambdaPacPass cfg)
+    , patTime  = fromMaybe patienceTime       (lambdaPacTime cfg)
     }
 
 getAppConfig :: [String] -> AppConfig
