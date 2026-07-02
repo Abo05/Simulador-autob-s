@@ -1,4 +1,4 @@
-module Passengers (getPassengers, busInStop, WaitingPassengers, getPatience) where
+module Passengers (getPassengers, boardPassengers, WaitingPassengers, getPatience) where
 
 import Bus (Bus(capacity, passengers))
 import System.Random (randomRIO)
@@ -41,8 +41,12 @@ beta1 alpha = do
 
     return beta
 
-busInStop :: Bus -> WaitingPassengers -> WaitingPassengers
-busInStop bus =  max 0 . (+ (passengers bus - capacity bus))
+boardPassengers :: Bus -> WaitingPassengers -> (Int, WaitingPassengers)
+boardPassengers bus queue = 
+    let availableSpace = capacity bus - passengers bus
+        nIn = max 0 (min queue availableSpace)
+        leftBehind = queue - nIn
+    in (nIn, leftBehind)
 
 getPatience :: Float -> Float -> WaitingPassengers -> Time -> IO (Maybe Time)
 getPatience l1 l2 p t = do 

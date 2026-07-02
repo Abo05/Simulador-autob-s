@@ -1,4 +1,4 @@
-module Bus (nextBus, Bus(..)) where
+module Bus (nextBus, Bus(..), dwellTime) where
 
 import System.Random (randomRIO)
 import Events (Time)
@@ -24,3 +24,16 @@ nextBus baseTime busCapacity = do
                     let pass = round (fromIntegral busCapacity * randPass)
 
                     return (time, Bus busCapacity pass)
+
+dwellTime :: Int -> Int -> Float -> Float -> Float -> IO Time
+dwellTime nIn nOut c tIn tOut = do
+    let dwellIn = c + tIn * fromIntegral nIn
+    let dwellOut = c + tOut * fromIntegral nOut
+
+    let baseDwell = max dwellIn dwellOut
+
+    rand <- randomRIO ((-baseDwell/4), baseDwell/2)
+
+    let dwell = rand + baseDwell
+    return (max dwell c)
+

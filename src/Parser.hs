@@ -9,11 +9,14 @@ data Config = Config
       busCapacity   :: Maybe Int,
       betaAlpha     :: Maybe Float,
       lambdaPacPass :: Maybe Float,
-      lambdaPacTime :: Maybe Float
+      lambdaPacTime :: Maybe Float,
+      busTimeIn     :: Maybe Float,
+      busTimeOut    :: Maybe Float,
+      busTimeDoors  :: Maybe Float
     } deriving (Show)
 
 emptyConfig :: Config
-emptyConfig = Config Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+emptyConfig = Config Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
 parse :: [String] -> Config
 parse []   = emptyConfig
@@ -28,6 +31,9 @@ parse args = parseArgs args emptyConfig
         parseArgs ("-a": val : xs) config = parseArgs xs (config { betaAlpha = Just (read val) })
         parseArgs ("-pp": val : xs) config = parseArgs xs (config { lambdaPacPass = Just (read val) })
         parseArgs ("-pt": val : xs) config = parseArgs xs (config { lambdaPacTime = Just (read val) })
+        parseArgs ("-ti": val : xs) config = parseArgs xs (config { busTimeIn = Just (read val) })
+        parseArgs ("-to": val : xs) config = parseArgs xs (config { busTimeOut = Just (read val) })
+        parseArgs ("-td": val : xs) config = parseArgs xs (config { busTimeDoors = Just (read val) })
         parseArgs (_ : xs) config         = parseArgs xs config
 
 lambdaGroupSize :: Float
@@ -51,6 +57,15 @@ patiencePassengers = 0.05
 patienceTime :: Float
 patienceTime = 0.02
 
+timeInPassenger :: Float
+timeInPassenger = 2.5
+
+timeOutPassenger :: Float
+timeOutPassenger = 1.2
+
+timeDoorsConst :: Float
+timeDoorsConst = 3.0
+
 data AppConfig = AppConfig
     { size    :: Float
     , time    :: Float
@@ -59,6 +74,9 @@ data AppConfig = AppConfig
     , sep     :: Float
     , patPass :: Float
     , patTime :: Float
+    , tIn     :: Float
+    , tOut    :: Float
+    , tDoors  :: Float
     } deriving (Show)
 
 applyDefaults :: Config -> AppConfig
@@ -70,6 +88,9 @@ applyDefaults cfg = AppConfig
     , sep      = fromMaybe separation         (betaAlpha cfg)
     , patPass  = fromMaybe patiencePassengers (lambdaPacPass cfg)
     , patTime  = fromMaybe patienceTime       (lambdaPacTime cfg)
+    , tIn      = fromMaybe timeInPassenger    (busTimeIn cfg)
+    , tOut     = fromMaybe timeOutPassenger   (busTimeOut cfg)
+    , tDoors   = fromMaybe timeDoorsConst     (busTimeDoors cfg)
     }
 
 getAppConfig :: [String] -> AppConfig

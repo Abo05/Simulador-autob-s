@@ -1,10 +1,12 @@
 module Motor(runSimulation) where
 
 import Control.Concurrent (threadDelay)
-import Passengers (getPassengers, busInStop, WaitingPassengers, getPatience)
-import Bus (nextBus, Bus(..))
+import Passengers (getPassengers, boardPassengers, WaitingPassengers, getPatience)
+import Bus (nextBus, Bus(..), dwellTime)
 import Events (EventType(..), Event, pushEvent, Time)
 import Parser (AppConfig(..))
+
+import System.Random (randomRIO)
 
 cGreen, cYellow, cRed, cReset :: String
 cGreen  = "\x1b[32m"
@@ -27,9 +29,9 @@ runSimulation conf = do
     let initialQueue = pushPassengers 0 firstGroups []
     let finalQueue = pushEvent (tFirstBus, BusArrival 0) initialQueue
     
-    loop conf tFirstBus 0 (Just firstBusObj) finalQueue
+    loop conf tFirstBus 0 firstBusObj finalQueue
 
-loop :: AppConfig -> Time -> WaitingPassengers -> Maybe Bus -> [Event] -> IO ()
+loop :: AppConfig -> Time -> WaitingPassengers -> Bus -> [Event] -> IO ()
 loop _ _ _ _ [] = return ()
 loop conf tNextBus waiting pendingBus ((eventTime, eventType) : restQueue) = do
     
@@ -54,31 +56,28 @@ loop conf tNextBus waiting pendingBus ((eventTime, eventType) : restQueue) = do
             loop conf tNextBus totalWaiting pendingBus queue
             
         BusArrival _ -> do
-            let arrivingBus = case pendingBus of
-                                Just b  -> b
-                                Nothing -> Bus (cap conf) 0
+            alightFraction <- randomRIO (0.0, 0.5) :: IO Float
+            let currentPass = passengers pendingBus
+            let nOut = round (alightFraction * fromIntegral currentPass)
             
-            let leftBehind = busInStop arrivingBus waiting
-            let boarded = waiting - leftBehind
+            let busAfterAlight = pendingBus { passengers = currentPass - nOut }
             
-            putStrLn $ cGreen ++ "[" ++ show eventTime ++ "] LLEGA BUS. Han subido: " ++ show boarded ++ " pasajeros. Se quedan: " ++ show leftBehind ++ cReset
-            
-            let fr = freq conf
-            let cp = cap conf
-            (dtNextBus, nextBusObj) <- nextBus fr cp
-            let nextEvent = (eventTime + dtNextBus, BusArrival 0)
-            let queue = pushEvent nextEvent restQueue
-            
-            let sz = size conf
-            let tm = time conf
-            let al = sep conf
-            groups <- getPassengers sz tm al dtNextBus
-            let newQueue = pushPassengers eventTime groups queue
-            let absoluteNextBusTime = eventTime + dtNextBus
+            let (nIn, newWaiting) = boardPassengers busAfterAlight waiting
+            let departingBus = busAfterAlight { passengers = passengers busAfterAlight + nIn }
 
-            threadDelay 500000 
-
-            loop conf absoluteNextBusTime leftBehind (Just nextBusObj) newQueue
+            let c = tDoors conf
+            let timeIn = tIn conf
+            let timeOut = tOut conf
+            
+            dwell <- dwellTime nIn nOut c timeIn timeOut
+            
+            putStrLn $ cGreen ++ "[" ++ show eventTime ++ "] LLEGA BUS. Bajan: " ++ show nOut ++ 
+                       " | Suben: " ++ show nIn ++ " (Dwell: " ++ show dwell ++ ")" ++ cReset
+            
+            let departureEvent = (eventTime + dwell, BusDeparture)
+            let queue = pushEvent departureEvent restQueue
+            
+            loop conf tNextBus newWaiting departingBus queue
 
         GroupAbandonment amount -> do
 
@@ -87,3 +86,22 @@ loop conf tNextBus waiting pendingBus ((eventTime, eventType) : restQueue) = do
 
             threadDelay 250000 
             loop conf tNextBus totalWaiting pendingBus restQueue
+
+        BusDeparture -> do
+            putStrLn $ cGreen ++ "[" ++ show eventTime ++ "] EL BUS SE MARCHA." ++ cReset
+
+            let fr = freq conf
+            let cp = cap conf
+            (dtNextBus, nextBusObj) <- nextBus fr cp
+            
+            let absoluteNextBusTime = eventTime + dtNextBus
+            let queue1 = pushEvent (absoluteNextBusTime, BusArrival 0) restQueue
+            
+            let sz = size conf
+            let tm = time conf
+            let al = sep conf
+            groups <- getPassengers sz tm al dtNextBus
+            let queue2 = pushPassengers eventTime groups queue1
+            
+            threadDelay 500000 
+            loop conf absoluteNextBusTime waiting nextBusObj queue2
