@@ -24,13 +24,20 @@ getPassengers lambdaSize lambdaArrival alpha time = do
                         calculateGroups (n - 1) (eventTime : times, groupSize : sizes)
 
 poisson :: Float -> IO Int
-poisson lambda = go 1 0
+poisson lambda 
+    | lambda > 30 = do
+        u1 <- randomRIO (1e-6, 1.0)
+        u2 <- randomRIO (0.0, 1.0)
+        let z0 = sqrt (-2.0 * log u1) * cos (2 * pi * u2)
+        let normal = lambda + sqrt lambda * z0
+        return $ max 0 (round normal)
+    | otherwise = go 1 0
     where
         limit = exp (-lambda)
         go p n = do
             u <- randomRIO (0.0, 1.0)
             let newP = p * u
-            if newP < limit
+            if newP <= limit
                 then return n
                 else go newP (n + 1)
 

@@ -58,13 +58,13 @@ patienceTime :: Float
 patienceTime = 0.02
 
 timeInPassenger :: Float
-timeInPassenger = 2.5
+timeInPassenger = 0.041
 
 timeOutPassenger :: Float
-timeOutPassenger = 1.2
+timeOutPassenger = 0.02
 
 timeDoorsConst :: Float
-timeDoorsConst = 3.0
+timeDoorsConst = 0.05
 
 data AppConfig = AppConfig
     { size    :: Float
