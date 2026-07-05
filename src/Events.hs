@@ -1,7 +1,7 @@
 module Events (EventType(..), Time, Event, pushEvent) where
 
 data EventType = GroupArrival Int 
-               | BusArrival Int  
+               | BusArrival
                | GroupAbandonment Int
                | BusDeparture
                deriving (Show)

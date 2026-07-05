@@ -21,9 +21,10 @@ helpMessage = unlines
     , "  -a  <float>   Parámetro alfa (Beta) de llegada anticipada/coordinada. Por defecto: 4.0"
     , "  -pp <float>   Sensibilidad de abandono por la multitud en la parada. Por defecto: 0.05"
     , "  -pt <float>   Sensibilidad de abandono por el tiempo de espera. Por defecto: 0.02"
-    , "  -ti <float>   Tiempo de subida por pasajero. Por defecto: 2.5"
-    , "  -to <float>   Tiempo de bajada por pasajero. Por defecto: 1.2"
-    , "  -td <float>   Tiempo constante de apertura y cierre de puertas. Por defecto: 3.0"
+    , "  -ti <float>   Tiempo de subida por pasajero. Por defecto: 0.041"
+    , "  -to <float>   Tiempo de bajada por pasajero. Por defecto: 0.02"
+    , "  -td <float>   Tiempo constante de apertura y cierre de puertas. Por defecto: 0.05"
+    , "  -pf <float>   Factor de penalización de paciencia si el autobús está lleno. Por defecto: 3.0"
     ]
 
 main :: IO ()
