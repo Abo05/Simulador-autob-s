@@ -1,10 +1,14 @@
-module Passengers (getPassengers, boardPassengers, WaitingPassengers, getPatience) where
+module Passengers (getPassengers, boardPassengers, WaitingPassengers(..), getPatience) where
 
 import Bus (Bus(capacity, passengers))
 import System.Random (randomRIO)
 import Events (Time)
 
-type WaitingPassengers = Int
+newtype WaitingPassengers = WaitingPassengers { getCount :: Int }
+    deriving (Eq, Ord)
+
+instance Show WaitingPassengers where
+    show (WaitingPassengers n) = show n
 
 getPassengers :: Float -> Float -> Float -> Time  -> IO ([Time], [WaitingPassengers])
 getPassengers lambdaSize lambdaArrival alpha time = do
@@ -21,7 +25,7 @@ getPassengers lambdaSize lambdaArrival alpha time = do
                     else do
                         beta <- beta1 alpha
                         let eventTime = beta * time
-                        calculateGroups (n - 1) (eventTime : times, groupSize : sizes)
+                        calculateGroups (n - 1) (eventTime : times, WaitingPassengers groupSize : sizes)
 
 poisson :: Float -> IO Int
 poisson lambda 
@@ -49,14 +53,14 @@ beta1 alpha = do
     return beta
 
 boardPassengers :: Bus -> WaitingPassengers -> (Int, WaitingPassengers)
-boardPassengers bus queue = 
+boardPassengers bus (WaitingPassengers queue) = 
     let availableSpace = capacity bus - passengers bus
         nIn = max 0 (min queue availableSpace)
         leftBehind = queue - nIn
-    in (nIn, leftBehind)
+    in (nIn, WaitingPassengers leftBehind)
 
 getPatience :: Float -> Float -> WaitingPassengers -> Time -> IO (Maybe Time)
-getPatience l1 l2 p t = do 
+getPatience l1 l2 (WaitingPassengers p) t = do 
     let lambda = l1 * fromIntegral p + l2 * t
     
     if lambda <= 0

@@ -1,7 +1,7 @@
 module Motor(runSimulation) where
 
 import Control.Concurrent (threadDelay)
-import Passengers (getPassengers, boardPassengers, WaitingPassengers, getPatience)
+import Passengers (getPassengers, boardPassengers, WaitingPassengers(..), getPatience)
 import Bus (nextBus, Bus(..), dwellTime)
 import Events (EventType(..), Event, pushEvent, Time)
 import Parser (AppConfig(..))
@@ -24,19 +24,19 @@ delayDeparture delay (x : xs) = x : delayDeparture delay xs
 pushPassengers :: Time -> ([Time], [WaitingPassengers]) -> [Event] -> [Event]
 pushPassengers _ ([], _) e = e
 pushPassengers _ (_, []) e = e
-pushPassengers tm (t : ts, w : ws) e = let event = (tm + t, GroupArrival w)
+pushPassengers tm (t : ts, w : ws) e = let event = (tm + t, GroupArrival (getCount w))
                                        in pushPassengers tm (ts, ws) (pushEvent event e)
 
 
 runSimulation :: AppConfig -> IO ()
 runSimulation conf = do
-    (tFirstBus, firstBusObj) <- nextBus (freq conf) (cap conf)
+    (tFirstBus, firstBusObj) <- nextBus (freq conf) (cap conf) (bNoise conf) (bDelProb conf) (bDelMax conf)
     firstGroups <- getPassengers (size conf) (time conf) (sep conf) tFirstBus
     
     let initialQueue = pushPassengers 0 firstGroups []
     let finalQueue = pushEvent (tFirstBus, BusArrival) initialQueue
     
-    loop conf tFirstBus 0 (InRoute firstBusObj) finalQueue
+    loop conf tFirstBus (WaitingPassengers 0) (InRoute firstBusObj) finalQueue
 
 loop :: AppConfig -> Time -> WaitingPassengers -> TransitState -> [Event] -> IO ()
 loop _ _ _ _ [] = return ()
@@ -44,7 +44,7 @@ loop conf tNextBus waiting transitState ((eventTime, eventType) : restQueue) = d
     
     case eventType of
         GroupArrival amount -> do
-            let totalWaiting = waiting + amount
+            let totalWaiting = WaitingPassengers (getCount waiting + amount)
             putStrLn $ cYellow ++ "[" ++ show eventTime ++ "] LLEGA GRUPO. Tamaño: " ++ show amount ++ ". Esperando en parada: " ++ show totalWaiting ++ cReset
             
             -- Lógica de embarque dinámico si el bus está estacionado
@@ -64,14 +64,16 @@ loop conf tNextBus waiting transitState ((eventTime, eventType) : restQueue) = d
                 InRoute _ -> return (totalWaiting, transitState, restQueue, 1.0)
 
             -- Evaluación de paciencia sobre los que no han logrado subir
-            let timeNextBus = max 0 (tNextBus - eventTime)
+            let timeNextBus = case transitState of
+                                InStop _  -> freq conf
+                                InRoute _ -> max 0 (tNextBus - eventTime)
             patience <- getPatience (patPass conf * penalty) (patTime conf * penalty) finalWaiting timeNextBus
             
             let queue = case patience of
                             Just waitingTime -> pushEvent (eventTime + waitingTime, GroupAbandonment amount) queueWithDelay
                             Nothing -> queueWithDelay
             
-            threadDelay 250000 
+            threadDelay (simDelay conf) 
             loop conf tNextBus finalWaiting finalState queue
             
         BusArrival -> do
@@ -79,7 +81,7 @@ loop conf tNextBus waiting transitState ((eventTime, eventType) : restQueue) = d
                                 InRoute b -> b
                                 InStop b -> b
             
-            alightFraction <- randomRIO (0.0, 0.5) :: IO Float
+            alightFraction <- randomRIO (0.0, alightMax conf) :: IO Float
             let currentPass = passengers incomingBus
             let nOut = round (alightFraction * fromIntegral currentPass)
             let busAfterAlight = incomingBus { passengers = currentPass - nOut }
@@ -87,7 +89,7 @@ loop conf tNextBus waiting transitState ((eventTime, eventType) : restQueue) = d
             let (nIn, newWaiting) = boardPassengers busAfterAlight waiting
             let departingBus = busAfterAlight { passengers = passengers busAfterAlight + nIn }
             
-            dwell <- dwellTime nIn nOut (tDoors conf) (tIn conf) (tOut conf)
+            dwell <- dwellTime nIn nOut (tDoors conf) (tIn conf) (tOut conf) (dwNMin conf) (dwNMax conf)
             
             putStrLn $ cGreen ++ "[" ++ show eventTime ++ "] LLEGA BUS. Bajan: " ++ show nOut ++ 
                        " | Suben: " ++ show nIn ++ " (Dwell: " ++ show dwell ++ ")" ++ cReset
@@ -100,22 +102,22 @@ loop conf tNextBus waiting transitState ((eventTime, eventType) : restQueue) = d
             let finalQueue = pushPassengers eventTime groupsDwell queue1
 
             let penalization = penFull conf
-            queuePenalize <- if newWaiting > 0
+            queuePenalize <- if getCount newWaiting > 0
                 then do
                     putStrLn $ cRed ++ "[" ++ show eventTime ++ "] Bus lleno. " ++ show newWaiting ++ " personas se quedan en tierra y evalúan marcharse." ++ cReset
-                    let timeNextBus = max 0 (tNextBus - eventTime)
+                    let timeNextBus = freq conf
                     patience <- getPatience (patPass conf * penalization) (patTime conf * penalization) newWaiting timeNextBus
                     case patience of
-                        Just waitingTime -> return $ pushEvent (eventTime + waitingTime, GroupAbandonment newWaiting) finalQueue
+                        Just waitingTime -> return $ pushEvent (eventTime + waitingTime, GroupAbandonment (getCount newWaiting)) finalQueue
                         Nothing -> return finalQueue
                 else return finalQueue
             
             loop conf tNextBus newWaiting (InStop departingBus) queuePenalize
 
         GroupAbandonment amount -> do
-            let totalWaiting = max 0 (waiting - amount)
+            let totalWaiting = WaitingPassengers (max 0 (getCount waiting - amount))
             putStrLn $ cRed ++ "[" ++ show eventTime ++ "] SE VA GRUPO. Tamaño: " ++ show amount ++ ". Esperando en parada: " ++ show totalWaiting ++ cReset
-            threadDelay 250000 
+            threadDelay (simDelay conf) 
             loop conf tNextBus totalWaiting transitState restQueue
 
         BusDeparture -> do
@@ -123,7 +125,7 @@ loop conf tNextBus waiting transitState ((eventTime, eventType) : restQueue) = d
 
             let fr = freq conf
             let cp = cap conf
-            (dtNextBus, nextBusObj) <- nextBus fr cp
+            (dtNextBus, nextBusObj) <- nextBus fr cp (bNoise conf) (bDelProb conf) (bDelMax conf)
             
             let absoluteNextBusTime = eventTime + dtNextBus
             let queue1 = pushEvent (absoluteNextBusTime, BusArrival) restQueue
@@ -131,5 +133,5 @@ loop conf tNextBus waiting transitState ((eventTime, eventType) : restQueue) = d
             groups <- getPassengers (size conf) (time conf) (sep conf) dtNextBus
             let queue2 = pushPassengers eventTime groups queue1
             
-            threadDelay 500000 
+            threadDelay (simDelay conf * 2) 
             loop conf absoluteNextBusTime waiting (InRoute nextBusObj) queue2
