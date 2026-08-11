@@ -1,11 +1,13 @@
 module Motor(runSimulation) where
 
 import Control.Concurrent (threadDelay)
-import Passengers (getPassengers, boardPassengers, WaitingPassengers(..), getPatience)
+import Passengers (
+    Passengers, PassengerGroup(..), totalPassengers,
+    pushGroup, popGroup, removeGroup, getPassengers, boardPassengers, getPatience
+  )
 import Bus (nextBus, Bus(..), dwellTime)
 import Events (EventType(..), Event, pushEvent, Time)
 import Parser (AppConfig(..))
-
 import System.Random (randomRIO)
 
 cGreen, cYellow, cRed, cReset :: String
@@ -21,12 +23,11 @@ delayDeparture _ [] = []
 delayDeparture delay ((t, BusDeparture) : xs) = pushEvent (t + delay, BusDeparture) xs
 delayDeparture delay (x : xs) = x : delayDeparture delay xs
 
-pushPassengers :: Time -> ([Time], [WaitingPassengers]) -> [Event] -> [Event]
+pushPassengers :: Time -> ([Time], [Int]) -> [Event] -> [Event]
 pushPassengers _ ([], _) e = e
 pushPassengers _ (_, []) e = e
-pushPassengers tm (t : ts, w : ws) e = let event = (tm + t, GroupArrival (getCount w))
+pushPassengers tm (t : ts, w : ws) e = let event = (tm + t, GroupArrival w)
                                        in pushPassengers tm (ts, ws) (pushEvent event e)
-
 
 runSimulation :: AppConfig -> IO ()
 runSimulation conf = do
@@ -36,45 +37,51 @@ runSimulation conf = do
     let initialQueue = pushPassengers 0 firstGroups []
     let finalQueue = pushEvent (tFirstBus, BusArrival) initialQueue
     
-    loop conf tFirstBus (WaitingPassengers 0) (InRoute firstBusObj) finalQueue
+    loop conf tFirstBus [] (InRoute firstBusObj) finalQueue
 
-loop :: AppConfig -> Time -> WaitingPassengers -> TransitState -> [Event] -> IO ()
+loop :: AppConfig -> Time -> Passengers -> TransitState -> [Event] -> IO ()
 loop _ _ _ _ [] = return ()
 loop conf tNextBus waiting transitState ((eventTime, eventType) : restQueue) = do
     
     case eventType of
         GroupArrival amount -> do
-            let totalWaiting = WaitingPassengers (getCount waiting + amount)
-            putStrLn $ cYellow ++ "[" ++ show eventTime ++ "] LLEGA GRUPO. Tamaño: " ++ show amount ++ ". Esperando en parada: " ++ show totalWaiting ++ cReset
-            
-            -- Lógica de embarque dinámico si el bus está estacionado
             let penalization = penFull conf
-            (finalWaiting, finalState, queueWithDelay, penalty) <- case transitState of
+            (nBoarded, newWaitingList, finalState, queueWithDelay, penalty) <- case transitState of
                 InStop parkedBus -> do
-                    let (nIn, leftBehind) = boardPassengers parkedBus totalWaiting
-                    if nIn > 0
+                    let availableSpace = capacity parkedBus - passengers parkedBus
+                    if amount <= availableSpace
                         then do
-                            let updatedBus = parkedBus { passengers = passengers parkedBus + nIn }
-                            let delay = tIn conf * fromIntegral nIn
-                            putStrLn $ cGreen ++ " -> " ++ show nIn ++ " logran subir corriendo. Retrasan la salida " ++ show delay ++ cReset
-                            return (leftBehind, InStop updatedBus, delayDeparture delay restQueue, 1.0)
+                            let updatedBus = parkedBus { passengers = passengers parkedBus + amount }
+                            let delay = tIn conf * fromIntegral amount
+                            putStrLn $ cGreen ++ " -> El grupo de " ++ show amount ++ " cabe entero y sube corriendo. Retrasan la salida " ++ show delay ++ cReset
+                            return (amount, waiting, InStop updatedBus, delayDeparture delay restQueue, 1.0)
                         else do
-                            putStrLn $ cRed ++ " -> Llegan corriendo pero el bus está lleno. Frustración aumentada." ++ cReset
-                            return (totalWaiting, transitState, restQueue, penalization)
-                InRoute _ -> return (totalWaiting, transitState, restQueue, 1.0)
+                            let newGroup = PassengerGroup { arrivalTime = eventTime, groupSize = amount, patience = 0 }
+                            putStrLn $ cRed ++ " -> Llegan corriendo pero el grupo (" ++ show amount ++ ") no cabe en las plazas libres (" ++ show availableSpace ++ "). Frustración aumentada." ++ cReset
+                            return (0, pushGroup newGroup waiting, transitState, restQueue, penalization)
+                InRoute _ -> do
+                    let newGroup = PassengerGroup { arrivalTime = eventTime, groupSize = amount, patience = 0 }
+                    return (0, pushGroup newGroup waiting, transitState, restQueue, 1.0)
 
-            -- Evaluación de paciencia sobre los que no han logrado subir
-            let timeNextBus = case transitState of
+            let totalWaitingCount = totalPassengers newWaitingList
+            putStrLn $ cYellow ++ "[" ++ show eventTime ++ "] LLEGA GRUPO. Tamaño: " ++ show amount ++ ". Esperando en parada: " ++ show totalWaitingCount ++ cReset
+
+            let timeNextBus = case finalState of
                                 InStop _  -> freq conf
                                 InRoute _ -> max 0 (tNextBus - eventTime)
-            patience <- getPatience (patPass conf * penalty) (patTime conf * penalty) finalWaiting timeNextBus
             
-            let queue = case patience of
-                            Just waitingTime -> pushEvent (eventTime + waitingTime, GroupAbandonment amount) queueWithDelay
-                            Nothing -> queueWithDelay
-            
+            -- Evaluación de paciencia solo si el nuevo grupo (o parte de él) se quedó en la parada
+            let lastGroupLeftOver = amount - nBoarded
+            queue <- if lastGroupLeftOver > 0
+                then do
+                    maybePatience <- getPatience (patPass conf * penalty) (patTime conf * penalty) totalWaitingCount timeNextBus
+                    case maybePatience of
+                        Just waitingTime -> return $ pushEvent (eventTime + waitingTime, GroupAbandonment eventTime) queueWithDelay
+                        Nothing -> return queueWithDelay
+                else return queueWithDelay
+
             threadDelay (simDelay conf) 
-            loop conf tNextBus finalWaiting finalState queue
+            loop conf tNextBus newWaitingList finalState queue
             
         BusArrival -> do
             let incomingBus = case transitState of
@@ -85,40 +92,50 @@ loop conf tNextBus waiting transitState ((eventTime, eventType) : restQueue) = d
             let currentPass = passengers incomingBus
             let nOut = round (alightFraction * fromIntegral currentPass)
             let busAfterAlight = incomingBus { passengers = currentPass - nOut }
+            let availableSpace = capacity busAfterAlight - passengers busAfterAlight
             
-            let (nIn, newWaiting) = boardPassengers busAfterAlight waiting
+            let (nIn, newWaitingList) = boardPassengers busAfterAlight waiting
             let departingBus = busAfterAlight { passengers = passengers busAfterAlight + nIn }
             
             dwell <- dwellTime nIn nOut (tDoors conf) (tIn conf) (tOut conf) (dwNMin conf) (dwNMax conf)
             
             putStrLn $ cGreen ++ "[" ++ show eventTime ++ "] LLEGA BUS. Bajan: " ++ show nOut ++ 
+                       " | Plazas libres: " ++ show availableSpace ++
                        " | Suben: " ++ show nIn ++ " (Dwell: " ++ show dwell ++ ")" ++ cReset
             
             let departureEvent = (eventTime + dwell, BusDeparture)
             let queue1 = pushEvent departureEvent restQueue
             
-            -- Generación de pasajeros durante la ventana de puertas abiertas
             groupsDwell <- getPassengers (size conf) (time conf) (sep conf) dwell
             let finalQueue = pushPassengers eventTime groupsDwell queue1
 
             let penalization = penFull conf
-            queuePenalize <- if getCount newWaiting > 0
+            let totalWaitingCount = totalPassengers newWaitingList
+            queuePenalize <- if totalWaitingCount > 0
                 then do
-                    putStrLn $ cRed ++ "[" ++ show eventTime ++ "] Bus lleno. " ++ show newWaiting ++ " personas se quedan en tierra y evalúan marcharse." ++ cReset
+                    putStrLn $ cRed ++ "[" ++ show eventTime ++ "] Bus lleno/parcial. " ++ show totalWaitingCount ++ " personas se quedan en tierra y evalúan marcharse." ++ cReset
                     let timeNextBus = freq conf
-                    patience <- getPatience (patPass conf * penalization) (patTime conf * penalization) newWaiting timeNextBus
-                    case patience of
-                        Just waitingTime -> return $ pushEvent (eventTime + waitingTime, GroupAbandonment (getCount newWaiting)) finalQueue
+                    maybePatience <- getPatience (patPass conf * penalization) (patTime conf * penalization) totalWaitingCount timeNextBus
+                    case maybePatience of
+                        Just waitingTime -> case popGroup newWaitingList of
+                            Just (headGroup, _) -> return $ pushEvent (eventTime + waitingTime, GroupAbandonment (arrivalTime headGroup)) finalQueue
+                            Nothing             -> return finalQueue
                         Nothing -> return finalQueue
                 else return finalQueue
             
-            loop conf tNextBus newWaiting (InStop departingBus) queuePenalize
+            loop conf tNextBus newWaitingList (InStop departingBus) queuePenalize
 
-        GroupAbandonment amount -> do
-            let totalWaiting = WaitingPassengers (max 0 (getCount waiting - amount))
-            putStrLn $ cRed ++ "[" ++ show eventTime ++ "] SE VA GRUPO. Tamaño: " ++ show amount ++ ". Esperando en parada: " ++ show totalWaiting ++ cReset
-            threadDelay (simDelay conf) 
-            loop conf tNextBus totalWaiting transitState restQueue
+        GroupAbandonment tArr -> do
+            case removeGroup tArr waiting of
+                (Just targetGroup, newWaitingList) -> do
+                    let amountLeft = groupSize targetGroup
+                    let totalWaitingCount = totalPassengers newWaitingList
+                    putStrLn $ cRed ++ "[" ++ show eventTime ++ "] SE VA GRUPO. Tamaño: " ++ show amountLeft ++ ". Esperando en parada: " ++ show totalWaitingCount ++ cReset
+                    threadDelay (simDelay conf) 
+                    loop conf tNextBus newWaitingList transitState restQueue
+                (Nothing, _) -> do
+                    -- El grupo ya había embarcado en el autobús antes de la expiración de la paciencia
+                    loop conf tNextBus waiting transitState restQueue
 
         BusDeparture -> do
             putStrLn $ cGreen ++ "[" ++ show eventTime ++ "] EL BUS SE MARCHA." ++ cReset

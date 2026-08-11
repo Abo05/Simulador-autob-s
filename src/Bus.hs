@@ -26,6 +26,7 @@ nextBus baseTime busCapacity busNoiseMax busDelayProb busDelayMax = do
     return (time, Bus busCapacity pass)
 
 dwellTime :: Int -> Int -> Float -> Float -> Float -> Float -> Float -> IO Time
+dwellTime 0 0 _ _ _ _ _ = return 0
 dwellTime nIn nOut c tIn tOut dwNMin dwNMax = do
     let dwellIn = c + tIn * fromIntegral nIn
     let dwellOut = c + tOut * fromIntegral nOut
